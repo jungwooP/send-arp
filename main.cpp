@@ -16,10 +16,10 @@ struct EthArpPacket final {
 };
 #pragma pack(pop)
 
-#define MAX_ATTEMPT_RECEIVE 100000
+#define MAX_ATTEMPT_RECEIVE 10000
 
 void usage() {
-	printf("syntax: send-arp-test <interface> <sender ip> <target ip> [<sender ip 2> <target ip 2> ...]\n");
+	printf("syntax: send-arp <interface> <sender ip> <target ip> [<sender ip 2> <target ip 2> ...]\n");
 	printf("sample : send-arp wlan0 192.168.10.2 192.168.10.1"); 
 }
 
@@ -91,7 +91,7 @@ bool receive_packet(pcap_t* pcap, Mac tmac_ip, Ip sip, Ip tip, Mac* sender_mac_o
 {
 	struct pcap_pkthdr* header;
     const u_char* packet;
-	bool match; 
+	bool mac_match; 
 	for(int i=0; i< MAX_ATTEMPT_RECEIVE ; i++)
 	{
 		int res = pcap_next_ex(pcap, &header, &packet);
@@ -105,17 +105,18 @@ bool receive_packet(pcap_t* pcap, Mac tmac_ip, Ip sip, Ip tip, Mac* sender_mac_o
 
 		// Received Packet을 ARP packet으로 Interpret
         EthArpPacket* received_packet = reinterpret_cast<EthArpPacket*>(const_cast<u_char*>(packet));
+		if (received_packet->eth_.type() != EthHdr::Arp) continue;
 		if (ntohs(received_packet->arp_.op_) != ArpHdr::Reply) continue; 
 		if (ntohl(received_packet->arp_.sip_) != sip) continue;
 		if (ntohl(received_packet->arp_.tip_) != tip) continue;
-		match = true;
+		mac_match = true;
 		for (int i = 0; i < 6; i++) {
 			if (((uint8_t*)(received_packet->arp_.tmac_))[i] != ((uint8_t*)tmac_ip)[i]) {
-				match = false;
+				mac_match = false;
 				break;
 			}
 		}
-		if (!match) continue;
+		if (!mac_match) continue;
 		*sender_mac_out = Mac(received_packet->arp_.smac_);
         return true;
 	}
@@ -157,8 +158,8 @@ int main(int argc, char* argv[]) {
 		printf("[*] Error : couldn't get MAC address! \n");
 		return EXIT_FAILURE;
 	}
-	printf("[*] My IP address : %s\n", std::string(ip).c_str());
-	printf("[*] My MAC address : %s\n", std::string(mac).c_str());
+	printf("[*] My IP address : %s\n", std::string(ip).data());
+	printf("[*] My MAC address : %s\n", std::string(mac).data());
 	
 	for(int i = 1; i < argc/2 ; i += 1){
 		printf("==================================================\n");
@@ -169,8 +170,8 @@ int main(int argc, char* argv[]) {
 			printf("[*] Error: receive error for get sender MAC!\n");
 			continue;
 		}
-		printf("  [*] Sender%d IP address: %s\n",i,std::string(sender_ip).c_str());
-		printf("  [*] Sender%d MAC address: %s\n",i,std::string(sender_mac).c_str());
+		printf("  [*] Sender%d IP address: %s\n",i,std::string(sender_ip).data());
+		printf("  [*] Sender%d MAC address: %s\n",i,std::string(sender_mac).data());
 		if(!send_packet(pcap, mac, sender_mac, mac, sender_mac, target_ip, sender_ip, false))
 		{
 			printf("[*] Error: Failed to send packet !\n");
@@ -181,4 +182,5 @@ int main(int argc, char* argv[]) {
 	pcap_close(pcap);
 	return 0;
 }
+
 
